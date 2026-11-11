@@ -195,9 +195,7 @@ def main(
         res_norms[name] = SymLogNorm(linthresh=linthresh, vmin=-vmax, vmax=vmax)
     scene_norm = AsinhNorm(linear_width=SCENE_LINEAR_WIDTH, vmin=0, vmax=1)
 
-    fig, axes = plt.subplots(
-        1, 4, figsize=(TEXT_WIDTH, 2.0), constrained_layout=True
-    )
+    fig, axes = plt.subplots(1, 4, figsize=(TEXT_WIDTH, 2.0), constrained_layout=True)
     for ax, arr, title in zip(
         axes[:2], [gs_default, jgs_scene], ["GalSim", "JAX-GalSim"]
     ):
@@ -210,7 +208,10 @@ def main(
     for ax, name, title in zip(
         axes[2:],
         ["default", "matched"],
-        ["JAX-GalSim $-$ GalSim\n(default sizes)", "JAX-GalSim $-$ GalSim\n(matched sizes)"],
+        [
+            "JAX-GalSim $-$ GalSim\n(default sizes)",
+            "JAX-GalSim $-$ GalSim\n(matched sizes)",
+        ],
     ):
         imr = ax.imshow(
             res_rel[name], origin="lower", cmap=RES_CMAP, norm=res_norms[name]
