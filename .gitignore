@@ -154,4 +154,4 @@ output*/
 # lock
 uv.lock
 
-scripts/paper/
+scripts/paper/timing_results

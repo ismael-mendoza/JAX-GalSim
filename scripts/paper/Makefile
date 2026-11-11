@@ -17,13 +17,16 @@ PYTHON ?= uv run --project $(REPO) python
 
 FIG1 := $(FIG_DIR)/figure1_fixed_sizes.png
 FIG2 := $(FIG_DIR)/figure2_full_scene.png
+TAB_DIR ?= $(abspath $(FIG_DIR)/../tables)
+TAB2 := $(TAB_DIR)/table2_timing.txt
 
-.PHONY: all figure1 figure2 clean
+.PHONY: all figure1 figure2 table2 clean
 
-all: figure1 figure2
+all: figure1 figure2 table2
 
 figure1: $(FIG1)
 figure2: $(FIG2)
+table2: $(TAB2)
 
 $(FIG1): $(HERE)/figure1_fixed_sizes.py $(HERE)/paper_style.py
 	cd $(HERE) && $(PYTHON) figure1_fixed_sizes.py --out $@
@@ -31,5 +34,8 @@ $(FIG1): $(HERE)/figure1_fixed_sizes.py $(HERE)/paper_style.py
 $(FIG2): $(HERE)/figure2_full_scene.py $(HERE)/paper_style.py $(REPO)/scripts/draw_scene_functions.py
 	cd $(HERE) && $(PYTHON) figure2_full_scene.py --out $@ --catsim-fpath $(CATSIM) --cache-dir $(CACHE_DIR)
 
+$(TAB2): $(HERE)/table2_timing.py $(wildcard $(HERE)/timing_results/*/time_array_results.npz)
+	cd $(HERE) && $(PYTHON) table2_timing.py --out $@
+
 clean:
-	rm -f $(FIG1) $(FIG2)
+	rm -f $(FIG1) $(FIG2) $(TAB2)
