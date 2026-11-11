@@ -10,8 +10,9 @@ peak of the GalSim image, with a shared color scale.
 
 Constraint: in JAX-GalSim, with `minimum_fft_size == maximum_fft_size`, the stamp
 cannot be larger than the FFT image. So "stamp larger" raises the FFT size to
-`good_fft_size(stamp)` if needed (GalSim's rule), and "FFT smaller" reduces the
-stamp to the FFT size if needed.
+`good_fft_size(stamp)` if needed (GalSim's rule). "FFT smaller" sets the FFT size
+equal to GalSim's stamp size, so the stamp is unchanged and the only difference is
+the flux outside the stamp folding back in.
 
 Draft notebook: notebooks/2026-11-09-paper-figure1-fixed-sizes.ipynb
 """
@@ -51,13 +52,13 @@ CROP = 100  # must be larger than the largest stamp (STAMP_LARGE)
 # smaller / larger than GalSim's choice
 STAMP_SMALL_FACTOR = 0.5  # times GalSim's stamp size
 STAMP_LARGE = 86  # pixels; good_fft_size(86) = 96 <= GalSim's FFT size, so the FFT size is unchanged
-FFT_SMALL = 32  # pixels; below the galaxy's own good size, so flux folds back in
+# FFT smaller: FFT size = GalSim's stamp size (not a good FFT size; JAX-GalSim accepts it)
 FFT_LARGE_FACTOR = 2.0  # times GalSim's FFT size
 
 # display
 IMAGE_LINEAR_WIDTH = 1e-2  # asinh linear width, in units of the peak
 IMAGE_TICKS = (0, 0.01, 0.1, 1)
-RES_LINTHRESH = 1e-5  # symlog linear threshold, in units of the peak
+RES_LINTHRESH = 1e-6  # symlog linear threshold, in units of the peak
 # ----------------------------------------------------------------------------
 
 canvas_center = galsim.PositionD(CANVAS / 2 + 0.5, CANVAS / 2 + 0.5)
@@ -121,7 +122,7 @@ def main(out: Path = typer.Option(..., help="Output PNG path.")):
     )
     print(f"getGoodImageSize: {obj_gs.getGoodImageSize(PIXEL_SCALE)}")
     assert galsim.Image.good_fft_size(STAMP_LARGE) <= gs_fft
-    assert FFT_SMALL < obj_gs.getGoodImageSize(PIXEL_SCALE)
+    assert gs_stamp < gs_fft
 
     ref = draw_galsim()
     peak = ref.max()
@@ -133,7 +134,7 @@ def main(out: Path = typer.Option(..., help="Output PNG path.")):
         "same as GalSim": (gs_stamp, gs_fft),
         "stamp smaller": (s_small, gs_fft),
         "stamp larger": (STAMP_LARGE, max(gs_fft, good(STAMP_LARGE))),
-        "FFT smaller": (min(gs_stamp, FFT_SMALL), FFT_SMALL),
+        "FFT smaller": (gs_stamp, gs_stamp),
         "FFT larger": (gs_stamp, f_large),
     }
 
@@ -151,9 +152,7 @@ def main(out: Path = typer.Option(..., help="Output PNG path.")):
     vmax = max(np.abs(r).max() for r in res_rel.values())
     res_norm = SymLogNorm(linthresh=RES_LINTHRESH, vmin=-vmax, vmax=vmax)
 
-    fig, axes = plt.subplots(
-        1, 5, figsize=(TEXT_WIDTH, 1.75), constrained_layout=True
-    )
+    fig, axes = plt.subplots(1, 5, figsize=(TEXT_WIDTH, 1.75), constrained_layout=True)
     im0 = axes[0].imshow(
         crop(ref) / peak,
         origin="lower",
