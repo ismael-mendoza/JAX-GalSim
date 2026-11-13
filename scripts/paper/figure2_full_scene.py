@@ -77,7 +77,7 @@ BUFFER = 4  # pixels added to GalSim's good size before picking a bin
 SCENE_LINEAR_WIDTH = 0.02  # asinh linear width, in units of the peak
 SCENE_TICKS = (0, 0.01, 0.1, 1)
 # symlog linear threshold for each residual panel, in units of the peak
-RES_LINTHRESH = {"default": 1e-6, "matched": 1e-11}
+RES_LINTHRESH = {"default": 1e-5, "matched": 1e-11}
 # ----------------------------------------------------------------------------
 
 
