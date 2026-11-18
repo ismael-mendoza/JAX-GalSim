@@ -1,26 +1,34 @@
 #!/usr/bin/env python3
-"""Figure 1: effect of a fixed stamp size and FFT size on one galaxy.
+"""Figure 1: effect of the stamp size and FFT size on one galaxy, in GalSim only.
 
-One isolated, elliptical exponential disk convolved with a round Moffat PSF.
-Reference: GalSim with default settings (GalSim picks the stamp size and FFT size).
-JAX-GalSim panels: stamp size or FFT size smaller / larger than GalSim's choice.
+One isolated, elliptical exponential disk convolved with a round Moffat PSF, drawn
+with GalSim. Reference: GalSim with default settings (GalSim picks the stamp size and
+FFT size). Other panels: GalSim with a stamp size or FFT size smaller / larger than
+its default choice, set only through the public API (`nx`, `ny` and `GSParams`).
+JAX-GalSim is not used, so the residuals come from the numerics of drawing with FFTs,
+not from differences between the two codes.
+
+How GalSim picks the FFT size (`GSObject.drawFFT_makeKImage`):
+`max(good_fft_size(max(getGoodImageSize, stamp)), minimum_fft_size)`.
+So:
+
+* "stamp smaller" / "stamp larger": only `nx`, `ny` change; the FFT size stays at
+  GalSim's default because `good_fft_size(stamp) <= minimum_fft_size`.
+* "FFT larger": `minimum_fft_size` raised above the default.
+* "FFT smaller": `minimum_fft_size` lowered below the default (128), so GalSim uses
+  `good_fft_size(getGoodImageSize)`. GalSim cannot use an FFT smaller than
+  `good_fft_size(stamp)`.
+
+The FFT size GalSim actually used is recorded for every panel and checked.
+
 Every stamp is drawn at the same position and pasted into the center of a larger
-canvas, so residuals are compared on a common grid. Residuals are relative to the
-peak of the GalSim image, with a shared color scale.
-
-Constraint: in JAX-GalSim, with `minimum_fft_size == maximum_fft_size`, the stamp
-cannot be larger than the FFT image. So "stamp larger" raises the FFT size to
-`good_fft_size(stamp)` if needed (GalSim's rule). "FFT smaller" sets the FFT size
-equal to GalSim's stamp size, so the stamp is unchanged and the only difference is
-the flux outside the stamp folding back in.
+canvas, so residuals are compared on a common grid. Residuals are relative to the peak
+of the reference image, with a shared color scale.
 
 Draft notebook: notebooks/2026-11-09-paper-figure1-fixed-sizes.ipynb
 """
 
-import os
-
-os.environ["JAX_ENABLE_X64"] = "True"
-
+import contextlib
 from pathlib import Path
 
 import galsim
@@ -28,9 +36,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import typer
 from matplotlib.colors import AsinhNorm, SymLogNorm
-from paper_style import IMAGE_CMAP, RES_CMAP, TEXT_WIDTH, clean_axes, set_style
-
-import jax_galsim as jgs
+from paper_style import IMAGE_CMAP, RES_CMAP, TEXT_WIDTH, pixel_axes, set_style
 
 # ---------------------------------------------------------------- parameters
 PIXEL_SCALE = 0.2  # arcsec / pixel
@@ -49,60 +55,61 @@ PSF_BETA = 2.5
 CANVAS = 192
 CROP = 100  # must be larger than the largest stamp (STAMP_LARGE)
 
-# smaller / larger than GalSim's choice
-STAMP_SMALL_FACTOR = 0.5  # times GalSim's stamp size
-STAMP_LARGE = 86  # pixels; good_fft_size(86) = 96 <= GalSim's FFT size, so the FFT size is unchanged
-# FFT smaller: FFT size = GalSim's stamp size (not a good FFT size; JAX-GalSim accepts it)
-FFT_LARGE_FACTOR = 2.0  # times GalSim's FFT size
+# smaller / larger than GalSim's default choice
+STAMP_SMALL_FACTOR = 0.5  # times the default stamp size
+STAMP_LARGE = 86  # pixels; good_fft_size(86) = 96 <= default FFT size, so the FFT size is unchanged
+FFT_SMALL_MIN = 64  # minimum_fft_size below the default, so GalSim's own choice wins
+FFT_LARGE_FACTOR = 2.0  # minimum_fft_size, times the default FFT size
 
 # display
 IMAGE_LINEAR_WIDTH = 1e-2  # asinh linear width, in units of the peak
 IMAGE_TICKS = (0, 0.01, 0.1, 1)
 RES_LINTHRESH = 1e-6  # symlog linear threshold, in units of the peak
+PIXEL_TICKS = (-40, 0, 40)  # pixels from the galaxy center
+TITLE_SIZE = 7  # points; smaller than the default so titles clear the colorbars
 # ----------------------------------------------------------------------------
 
 canvas_center = galsim.PositionD(CANVAS / 2 + 0.5, CANVAS / 2 + 0.5)
 
 
-def make_obj(lib):
-    """Same profile in GalSim (lib=galsim) or JAX-GalSim (lib=jgs)."""
-    gal = lib.Exponential(half_light_radius=HLR, flux=FLUX).shear(
-        q=Q, beta=BETA * lib.degrees
+def make_obj(gsparams=None):
+    gal = galsim.Exponential(half_light_radius=HLR, flux=FLUX).shear(
+        q=Q, beta=BETA * galsim.degrees
     )
-    psf = lib.Moffat(beta=PSF_BETA, fwhm=PSF_FWHM)
-    return lib.Convolve([gal, psf])
+    psf = galsim.Moffat(beta=PSF_BETA, fwhm=PSF_FWHM)
+    return galsim.Convolve([gal, psf], gsparams=gsparams)
 
 
-def galsim_sizes(obj):
-    """Stamp size and FFT size GalSim uses for drawImage with default settings."""
-    stamp = obj.drawImage(scale=PIXEL_SCALE)
-    nstamp = stamp.array.shape[0]
-    nfft = galsim.Image.good_fft_size(max(obj.getGoodImageSize(PIXEL_SCALE), nstamp))
-    nfft = max(nfft, obj.gsparams.minimum_fft_size)
-    return nstamp, nfft
+@contextlib.contextmanager
+def record_fft_sizes():
+    """Record the FFT size GalSim uses in drawFFT, without changing anything."""
+    orig = galsim.GSObject.drawFFT_makeKImage
+    sizes = []
+
+    def recording(self, image):
+        kimage, wrap_size = orig(self, image)
+        sizes.append(wrap_size)
+        return kimage, wrap_size
+
+    galsim.GSObject.drawFFT_makeKImage = recording
+    try:
+        yield sizes
+    finally:
+        galsim.GSObject.drawFFT_makeKImage = orig
 
 
-def paste(arr, xmin, ymin):
+def draw(stamp_size=None, gsparams=None):
+    """Draw at the canvas center; return (canvas array, stamp size, FFT size used)."""
+    kwargs = {} if stamp_size is None else dict(nx=stamp_size, ny=stamp_size)
+    with record_fft_sizes() as sizes:
+        im = make_obj(gsparams).drawImage(
+            scale=PIXEL_SCALE, center=canvas_center, **kwargs
+        )
+    assert len(sizes) == 1
     out = np.zeros((CANVAS, CANVAS))
-    out[ymin - 1 : ymin - 1 + arr.shape[0], xmin - 1 : xmin - 1 + arr.shape[1]] += arr
-    return out
-
-
-def draw_galsim():
-    im = make_obj(galsim).drawImage(scale=PIXEL_SCALE, center=canvas_center)
-    return paste(im.array, im.bounds.xmin, im.bounds.ymin)
-
-
-def draw_jax(stamp_size, fft_size):
-    gsparams = jgs.GSParams(minimum_fft_size=fft_size, maximum_fft_size=fft_size)
-    obj = make_obj(jgs).withGSParams(gsparams)
-    im = obj.drawImage(
-        nx=stamp_size,
-        ny=stamp_size,
-        scale=PIXEL_SCALE,
-        center=jgs.PositionD(canvas_center.x, canvas_center.y),
-    )
-    return paste(np.asarray(im.array), int(im.bounds.xmin), int(im.bounds.ymin))
+    b = im.bounds
+    out[b.ymin - 1 : b.ymax, b.xmin - 1 : b.xmax] = im.array
+    return out, im.array.shape[0], sizes[0]
 
 
 def crop(x):
@@ -114,64 +121,71 @@ def main(out: Path = typer.Option(..., help="Output PNG path.")):
     set_style()
     assert CROP > STAMP_LARGE
 
-    obj_gs = make_obj(galsim)
-    gs_stamp, gs_fft = galsim_sizes(obj_gs)
-    print(f"GalSim stamp size: {gs_stamp}")
-    print(
-        f"GalSim FFT size: {gs_fft} (minimum_fft_size = {obj_gs.gsparams.minimum_fft_size})"
-    )
-    print(f"getGoodImageSize: {obj_gs.getGoodImageSize(PIXEL_SCALE)}")
-    assert galsim.Image.good_fft_size(STAMP_LARGE) <= gs_fft
-    assert gs_stamp < gs_fft
-
-    ref = draw_galsim()
+    ref, gs_stamp, gs_fft = draw()
     peak = ref.max()
+    min_fft = galsim.GSParams().minimum_fft_size
+    print(f"default stamp size: {gs_stamp}")
+    print(f"default FFT size: {gs_fft} (minimum_fft_size = {min_fft})")
+    print(f"getGoodImageSize: {make_obj().getGoodImageSize(PIXEL_SCALE)}")
 
-    good = galsim.Image.good_fft_size
-    s_small = int(gs_stamp * STAMP_SMALL_FACTOR)
-    f_large = int(gs_fft * FFT_LARGE_FACTOR)
     cases = {
-        "same as GalSim": (gs_stamp, gs_fft),
-        "stamp smaller": (s_small, gs_fft),
-        "stamp larger": (STAMP_LARGE, max(gs_fft, good(STAMP_LARGE))),
-        "FFT smaller": (gs_stamp, gs_stamp),
-        "FFT larger": (gs_stamp, f_large),
+        "stamp smaller": dict(stamp_size=int(gs_stamp * STAMP_SMALL_FACTOR)),
+        "stamp larger": dict(stamp_size=STAMP_LARGE),
+        "FFT smaller": dict(gsparams=galsim.GSParams(minimum_fft_size=FFT_SMALL_MIN)),
+        "FFT larger": dict(
+            gsparams=galsim.GSParams(minimum_fft_size=int(gs_fft * FFT_LARGE_FACTOR))
+        ),
     }
 
-    residuals = {}
-    for name, (nstamp, nfft) in cases.items():
-        r = draw_jax(nstamp, nfft) - ref
-        residuals[name] = r
+    res_rel, sizes = {}, {}
+    for name, kwargs in cases.items():
+        arr, nstamp, nfft = draw(**kwargs)
+        r = arr - ref
+        res_rel[name] = crop(r) / peak
+        sizes[name] = (nstamp, nfft)
         print(
             f"{name:15s} stamp={nstamp:4d} fft={nfft:4d}  "
             f"max|res|/peak={np.abs(r).max() / peak:.2e}  dflux/flux={r.sum() / ref.sum():+.2e}"
         )
 
-    panels = ["stamp smaller", "stamp larger", "FFT smaller", "FFT larger"]
-    res_rel = {k: crop(residuals[k]) / peak for k in panels}
+    # each panel changes exactly one of the two sizes, in the stated direction
+    assert sizes["stamp smaller"][0] < gs_stamp and sizes["stamp smaller"][1] == gs_fft
+    assert sizes["stamp larger"][0] > gs_stamp and sizes["stamp larger"][1] == gs_fft
+    assert sizes["FFT smaller"][0] == gs_stamp and sizes["FFT smaller"][1] < gs_fft
+    assert sizes["FFT larger"][0] == gs_stamp and sizes["FFT larger"][1] > gs_fft
+
     vmax = max(np.abs(r).max() for r in res_rel.values())
     res_norm = SymLogNorm(linthresh=RES_LINTHRESH, vmin=-vmax, vmax=vmax)
+
+    # pixel edges relative to the galaxy center (which sits on a pixel corner, at 0)
+    half = CROP / 2
+    extent = (-half, half, -half, half)
 
     fig, axes = plt.subplots(1, 5, figsize=(TEXT_WIDTH, 1.75), constrained_layout=True)
     im0 = axes[0].imshow(
         crop(ref) / peak,
         origin="lower",
+        extent=extent,
         cmap=IMAGE_CMAP,
         norm=AsinhNorm(linear_width=IMAGE_LINEAR_WIDTH, vmin=0, vmax=1),
     )
-    axes[0].set_title(f"GalSim\n(stamp {gs_stamp}, FFT {gs_fft})")
+    axes[0].set_title(
+        f"GalSim default\n(stamp {gs_stamp}, FFT {gs_fft})", fontsize=TITLE_SIZE
+    )
     cb0 = fig.colorbar(im0, ax=axes[0], shrink=0.85, pad=0.02, ticks=IMAGE_TICKS)
     cb0.ax.set_yticklabels([f"{t:g}" for t in IMAGE_TICKS])
     cb0.set_label("flux / peak")
 
-    for ax, name in zip(axes[1:], panels):
-        nstamp, nfft = cases[name]
-        imr = ax.imshow(res_rel[name], origin="lower", cmap=RES_CMAP, norm=res_norm)
-        ax.set_title(f"{name}\n(stamp {nstamp}, FFT {nfft})")
+    for ax, name in zip(axes[1:], cases):
+        nstamp, nfft = sizes[name]
+        imr = ax.imshow(
+            res_rel[name], origin="lower", extent=extent, cmap=RES_CMAP, norm=res_norm
+        )
+        ax.set_title(f"{name}\n(stamp {nstamp}, FFT {nfft})", fontsize=TITLE_SIZE)
     cbr = fig.colorbar(imr, ax=axes[1:], shrink=0.85, pad=0.01)
-    cbr.set_label("(JAX-GalSim $-$ GalSim) / peak")
+    cbr.set_label("(changed $-$ default) / peak")
 
-    clean_axes(axes)
+    pixel_axes(axes, PIXEL_TICKS)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out)
     print(f"Saved {out}")
