@@ -327,11 +327,15 @@ def main(
         del (samples_per_bin, n_iters_per_bin, _xpsf)
         # cpu versions no longer needed
 
-        # compilation (not timed)
+        # compilation: the first call traces, compiles, and draws once. It is timed
+        # separately and not included in `times_jgalsim`.
         if ii == 0:
+            t1 = time.time()
             _ = block_until_ready(
                 all_draw_fnc(samples_per_bin_jax, n_iters_per_bin_jax, xpsf_gpu)
             )
+            t2 = time.time()
+            t_first_call = t2 - t1
 
         # jax galsim timing
         t1 = time.time()
@@ -342,6 +346,14 @@ def main(
         t2 = time.time()
         t_jgalsim = t2 - t1
         times_jgalsim.append(t_jgalsim)
+
+        # same inputs as the first call, so the difference is the compilation time
+        if ii == 0:
+            t_compile = t_first_call - t_jgalsim
+            print(
+                f"INFO: First JAX-GalSim call took {t_first_call:.4f} s;"
+                f" compilation time is about {t_compile:.4f} s."
+            )
 
         if check_stamp_sizes and verbose:
             _res = gs_arr - np.array(jgs_arr)
@@ -402,6 +414,8 @@ def main(
         times_galsim=times_galsim,
         times_jgalsim=times_jgalsim,
         times_transfer=times_transfer,
+        t_first_call=t_first_call,
+        t_compile=t_compile,
     )
 
 
@@ -461,7 +475,13 @@ def _create_record(gsizes, stamp_slen_bins, buffer):
 
 
 def _save_timing_results(
-    *, out_folder: Path, times_galsim: list, times_jgalsim: list, times_transfer: list
+    *,
+    out_folder: Path,
+    times_galsim: list,
+    times_jgalsim: list,
+    times_transfer: list,
+    t_first_call: float,
+    t_compile: float,
 ):
     # print summary timing results
     summary_fname = out_folder / "summary.txt"
@@ -495,6 +515,21 @@ def _save_timing_results(
             file=fp,
         )
 
+        print(file=fp)
+        print(
+            f"First JAX-GalSim call (compilation + one draw): {t_first_call:.4f} seconds",
+            file=fp,
+        )
+        print(
+            f"JAX-GalSim compilation time (first call minus first timed draw): {t_compile:.4f} seconds",
+            file=fp,
+        )
+        print(
+            f"Compilation time / total JAX-GalSim time over {len(times_jgalsim)} images:"
+            f" {t_compile / np.sum(times_jgalsim):.4f}",
+            file=fp,
+        )
+
     # save histogram of each in png format
     hist_times_file = out_folder / "time_histograms.png"
     fig, ax = plt.subplots(1, 1, figsize=(8, 8))
@@ -511,6 +546,8 @@ def _save_timing_results(
         t_galsim=np.array(times_galsim),
         t_jgalsim=np.array(times_jgalsim),
         t_transfer=np.array(times_transfer),
+        t_first_call=t_first_call,
+        t_compile=t_compile,
     )
 
 
