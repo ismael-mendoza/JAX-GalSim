@@ -36,7 +36,7 @@ import numpy as np
 import typer
 from jax import jit, random
 from matplotlib.colors import AsinhNorm, SymLogNorm
-from paper_style import IMAGE_CMAP, RES_CMAP, TEXT_WIDTH, clean_axes, set_style
+from paper_style import IMAGE_CMAP, RES_CMAP, TEXT_WIDTH, pixel_axes, set_style
 
 import jax_galsim as jgs
 
@@ -76,6 +76,7 @@ BUFFER = 4  # pixels added to GalSim's good size before picking a bin
 # display
 SCENE_LINEAR_WIDTH = 0.02  # asinh linear width, in units of the peak
 SCENE_TICKS = (0, 0.01, 0.1, 1)
+PIXEL_TICKS = (0, 100, 200)  # pixels from the scene's lower-left corner
 # symlog linear threshold for each residual panel, in units of the peak
 RES_LINTHRESH = {"default": 1e-5, "matched": 1e-11}
 # ----------------------------------------------------------------------------
@@ -195,11 +196,15 @@ def main(
         res_norms[name] = SymLogNorm(linthresh=linthresh, vmin=-vmax, vmax=vmax)
     scene_norm = AsinhNorm(linear_width=SCENE_LINEAR_WIDTH, vmin=0, vmax=1)
 
+    extent = (0, IMAGE_SLEN, 0, IMAGE_SLEN)  # pixel edges
+
     fig, axes = plt.subplots(1, 4, figsize=(TEXT_WIDTH, 2.0), constrained_layout=True)
     for ax, arr, title in zip(
         axes[:2], [gs_default, jgs_scene], ["GalSim", "JAX-GalSim"]
     ):
-        ims = ax.imshow(arr / peak, origin="lower", cmap=IMAGE_CMAP, norm=scene_norm)
+        ims = ax.imshow(
+            arr / peak, origin="lower", extent=extent, cmap=IMAGE_CMAP, norm=scene_norm
+        )
         ax.set_title(title)
     cbs = fig.colorbar(ims, ax=axes[:2], shrink=0.85, pad=0.01, ticks=SCENE_TICKS)
     cbs.ax.set_yticklabels([f"{t:g}" for t in SCENE_TICKS])
@@ -208,19 +213,20 @@ def main(
     for ax, name, title in zip(
         axes[2:],
         ["default", "matched"],
-        [
-            "JAX-GalSim $-$ GalSim\n(default sizes)",
-            "JAX-GalSim $-$ GalSim\n(matched sizes)",
-        ],
+        ["residual\n(default sizes)", "residual\n(matched sizes)"],
     ):
         imr = ax.imshow(
-            res_rel[name], origin="lower", cmap=RES_CMAP, norm=res_norms[name]
+            res_rel[name],
+            origin="lower",
+            extent=extent,
+            cmap=RES_CMAP,
+            norm=res_norms[name],
         )
         ax.set_title(title)
         cbr = fig.colorbar(imr, ax=ax, shrink=0.85, pad=0.02)
-    cbr.set_label("residual / peak")
+    cbr.set_label("(JAX-GalSim $-$ GalSim) / peak")
 
-    clean_axes(axes)
+    pixel_axes(axes, PIXEL_TICKS)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out)
     print(f"Saved {out}")
