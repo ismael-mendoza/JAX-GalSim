@@ -2,6 +2,11 @@
 """GPU-profile the full scene drawing pipeline (stratified stamp size bins) via
 `jax.profiler.trace`, in the same spirit as `test_roofline_xprof.py` but for the more
 realistic multi-bin pipeline exercised in `timing_tests_general.py`.
+
+Only drawing is traced: compilation happens in an untraced warm-up call, and the inputs
+are already on the GPU (transfers inside the trace raise an error). With
+`--n-repeats N`, the same scene (same inputs) is drawn N times inside one trace, each
+draw marked as one step (`jax.profiler.StepTraceAnnotation`).
 """
 
 import os
@@ -48,7 +53,11 @@ def main(
     max_n_iters: int = typer.Option(default=5),
     max_mag: float = typer.Option(default=27.0),
     min_hlr: float = typer.Option(default=0.0),
+    n_repeats: int = typer.Option(
+        default=1, help="Draws of the same scene inside the trace."
+    ),
 ):
+    assert n_repeats >= 1
     stamp_slen_bins = _parse_bins_str_input(stamp_slen_bins_str)
     max_n_gals_bins = _parse_bins_str_input(max_n_gals_bins_str)
     fft_size_bins = _parse_bins_str_input(fft_size_bins_str)
@@ -142,12 +151,16 @@ def main(
     _ = block_until_ready(all_draw_fnc(*_inputs))
 
     trace_name = f"jax-trace-scene-{scan_or_vmap}-{seed}-{image_slen}"
+    if n_repeats > 1:
+        trace_name += f"-x{n_repeats}"
     trace_dir = out_root_path / trace_name
-    print(f"INFO: Profiling scene drawing to '{trace_dir}'...")
+    print(f"INFO: Profiling {n_repeats} draw(s) of one scene to '{trace_dir}'...")
     with jax.profiler.trace(trace_dir):
         with jax.transfer_guard("disallow"):
-            _ = block_until_ready(all_draw_fnc(*_inputs))
-        del _inputs
+            for step in range(n_repeats):
+                with jax.profiler.StepTraceAnnotation("draw_scene", step_num=step):
+                    _ = block_until_ready(all_draw_fnc(*_inputs))
+    del _inputs
     print("INFO: Done tracing.")
 
 
