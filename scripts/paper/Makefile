@@ -2,6 +2,7 @@
 #
 #   make -C scripts/paper            # all figures
 #   make -C scripts/paper figure1    # one figure
+#   make -C scripts/paper table1     # versions in Table 1 (the table itself is by hand)
 #   make -C scripts/paper FIG_DIR=/some/other/folder
 #
 # Figures are only remade when their script (or a script they use) changes;
@@ -18,15 +19,21 @@ PYTHON ?= uv run --project $(REPO) python
 FIG1 := $(FIG_DIR)/figure1_fixed_sizes.png
 FIG2 := $(FIG_DIR)/figure2_full_scene.png
 TAB_DIR ?= $(abspath $(FIG_DIR)/../tables)
+TAB1_VERSIONS := $(TAB_DIR)/table1_versions.txt
 TAB2 := $(TAB_DIR)/table2_timing.txt
 
-.PHONY: all figure1 figure2 table2 clean
+.PHONY: all figure1 figure2 table1 table2 clean FORCE
 
-all: figure1 figure2 table2
+all: figure1 figure2 table1 table2
 
 figure1: $(FIG1)
 figure2: $(FIG2)
+table1: $(TAB1_VERSIONS)
 table2: $(TAB2)
+
+# Always rerun: the versions change without any file here changing.
+$(TAB1_VERSIONS): FORCE
+	cd $(HERE) && $(PYTHON) table1_versions.py --out $@
 
 $(FIG1): $(HERE)/figure1_fixed_sizes.py $(HERE)/paper_style.py
 	cd $(HERE) && $(PYTHON) figure1_fixed_sizes.py --out $@
@@ -38,4 +45,6 @@ $(TAB2): $(HERE)/table2_timing.py $(wildcard $(HERE)/timing_results/*/time_array
 	cd $(HERE) && $(PYTHON) table2_timing.py --out $@
 
 clean:
-	rm -f $(FIG1) $(FIG2) $(TAB2)
+	rm -f $(FIG1) $(FIG2) $(TAB1_VERSIONS) $(TAB2)
+
+FORCE:

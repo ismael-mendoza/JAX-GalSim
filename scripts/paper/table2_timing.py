@@ -72,7 +72,7 @@ def make_table(rows: list[str], n_samples: list[int]) -> str:
         "\\begin{table*}",
         "\\centering",
         "\\footnotesize",
-        "\\caption{Time per full-scene image}",
+        "\\caption{Timing comparison for drawing full-scene images}",
         "\\label{tab:timing}",
         "\\begin{tabular}{llrrrrrrr}",
         "\\toprule",
@@ -85,11 +85,12 @@ def make_table(rows: list[str], n_samples: list[int]) -> str:
         "\\bottomrule",
         "\\end{tabular}",
         "\\par\\smallskip",
-        "\\parbox{\\textwidth}{\\emph{Note.} GalSim runs on one CPU core and JAX-GalSim on one"
-        " A100 GPU. Times are per image, over " + n_str + " scenes per row; JAX-GalSim"
-        " compilation is not included. Transfer is the time to bin the galaxy parameters"
-        " and move them to the GPU. Speedup is the ratio of the median GalSim and JAX-GalSim"
-        " times, without transfer.}",
+        "\\parbox{\\textwidth}{\\emph{Note.} Tming results comparing drawing full galaxy scenes using GalSim running on a single CPU core vs. JAX-GalSim on one A100 GPU. JAX-GalSim vectorizes the rendering of individual galaxy stamps and pasting them into the full scene (independently for each size bin). GalSim performs both of these operations sequentially."
+        " The times (in seconds) are aggregated over "
+        + n_str
+        + " scenes. The `JAX-GalSim' column does not include compilation or transfer time."
+        " `Transfer' is the time to bin the galaxy parameters and move them to the GPU. "
+        "`Speedup' is the ratio of the median GalSim and JAX-GalSim times, without transfer or compilation times. Our results indicate that compilation times are negligible in all cases for JAX-GalSim and are not included. For more details see Section \\FIXME{YY}.}",
         "\\end{table*}",
     ]
     return "\n".join(lines) + "\n"
