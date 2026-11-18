@@ -18,16 +18,18 @@ PYTHON ?= uv run --project $(REPO) python
 
 FIG1 := $(FIG_DIR)/figure1_fixed_sizes.png
 FIG2 := $(FIG_DIR)/figure2_full_scene.png
+FIGA1 := $(FIG_DIR)/figureA1_moffat_table.png
 TAB_DIR ?= $(abspath $(FIG_DIR)/../tables)
 TAB1_VERSIONS := $(TAB_DIR)/table1_versions.txt
 TAB2 := $(TAB_DIR)/table2_timing.txt
 
-.PHONY: all figure1 figure2 table1 table2 clean FORCE
+.PHONY: all figure1 figure2 figureA1 table1 table2 clean FORCE
 
-all: figure1 figure2 table1 table2
+all: figure1 figure2 figureA1 table1 table2
 
 figure1: $(FIG1)
 figure2: $(FIG2)
+figureA1: $(FIGA1)
 table1: $(TAB1_VERSIONS)
 table2: $(TAB2)
 
@@ -41,10 +43,13 @@ $(FIG1): $(HERE)/figure1_fixed_sizes.py $(HERE)/paper_style.py
 $(FIG2): $(HERE)/figure2_full_scene.py $(HERE)/paper_style.py $(REPO)/scripts/draw_scene_functions.py
 	cd $(HERE) && $(PYTHON) figure2_full_scene.py --out $@ --catsim-fpath $(CATSIM) --cache-dir $(CACHE_DIR)
 
+$(FIGA1): $(HERE)/figureA1_moffat_table.py $(HERE)/paper_style.py $(REPO)/scripts/draw_scene_functions.py
+	cd $(HERE) && $(PYTHON) figureA1_moffat_table.py --out $@
+
 $(TAB2): $(HERE)/table2_timing.py $(wildcard $(HERE)/timing_results/*/time_array_results.npz)
 	cd $(HERE) && $(PYTHON) table2_timing.py --out $@
 
 clean:
-	rm -f $(FIG1) $(FIG2) $(TAB1_VERSIONS) $(TAB2)
+	rm -f $(FIG1) $(FIG2) $(FIGA1) $(TAB1_VERSIONS) $(TAB2)
 
 FORCE:
