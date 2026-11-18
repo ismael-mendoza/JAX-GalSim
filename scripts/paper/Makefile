@@ -19,17 +19,22 @@ PYTHON ?= uv run --project $(REPO) python
 FIG1 := $(FIG_DIR)/figure1_fixed_sizes.png
 FIG2 := $(FIG_DIR)/figure2_full_scene.png
 FIGA1 := $(FIG_DIR)/figureA1_moffat_table.png
+FIGA2 := $(FIG_DIR)/figureA2_cpu_gpu.png
+# npz from scene_cpu_gpu.py, run on a GPU node by scripts/gpu-master.sbatch (copy it here)
+GPU_RESULTS ?= $(HERE)/gpu_results
+SCENE_CPU_GPU := $(GPU_RESULTS)/scene_cpu_gpu.npz
 TAB_DIR ?= $(abspath $(FIG_DIR)/../tables)
 TAB1_VERSIONS := $(TAB_DIR)/table1_versions.txt
 TAB2 := $(TAB_DIR)/table2_timing.txt
 
-.PHONY: all figure1 figure2 figureA1 table1 table2 clean FORCE
+.PHONY: all figure1 figure2 figureA1 figureA2 table1 table2 clean FORCE
 
-all: figure1 figure2 figureA1 table1 table2
+all: figure1 figure2 figureA1 figureA2 table1 table2
 
 figure1: $(FIG1)
 figure2: $(FIG2)
 figureA1: $(FIGA1)
+figureA2: $(FIGA2)
 table1: $(TAB1_VERSIONS)
 table2: $(TAB2)
 
@@ -40,16 +45,19 @@ $(TAB1_VERSIONS): FORCE
 $(FIG1): $(HERE)/figure1_fixed_sizes.py $(HERE)/paper_style.py
 	cd $(HERE) && $(PYTHON) figure1_fixed_sizes.py --out $@
 
-$(FIG2): $(HERE)/figure2_full_scene.py $(HERE)/paper_style.py $(REPO)/scripts/draw_scene_functions.py
+$(FIG2): $(HERE)/figure2_full_scene.py $(HERE)/fig2_scene.py $(HERE)/paper_style.py $(REPO)/scripts/draw_scene_functions.py
 	cd $(HERE) && $(PYTHON) figure2_full_scene.py --out $@ --catsim-fpath $(CATSIM) --cache-dir $(CACHE_DIR)
 
 $(FIGA1): $(HERE)/figureA1_moffat_table.py $(HERE)/paper_style.py $(REPO)/scripts/draw_scene_functions.py
 	cd $(HERE) && $(PYTHON) figureA1_moffat_table.py --out $@
 
+$(FIGA2): $(HERE)/figureA2_cpu_gpu.py $(HERE)/paper_style.py $(SCENE_CPU_GPU)
+	cd $(HERE) && $(PYTHON) figureA2_cpu_gpu.py --npz $(SCENE_CPU_GPU) --out $@
+
 $(TAB2): $(HERE)/table2_timing.py $(wildcard $(HERE)/timing_results/*/time_array_results.npz)
 	cd $(HERE) && $(PYTHON) table2_timing.py --out $@
 
 clean:
-	rm -f $(FIG1) $(FIG2) $(FIGA1) $(TAB1_VERSIONS) $(TAB2)
+	rm -f $(FIG1) $(FIG2) $(FIGA1) $(FIGA2) $(TAB1_VERSIONS) $(TAB2)
 
 FORCE:
