@@ -34,7 +34,15 @@ def set_style():
     )
 
 
-def clean_axes(axes):
-    for ax in axes:
-        ax.set_xticks([])
-        ax.set_yticks([])
+def pixel_axes(axes, ticks):
+    """Same pixel ticks on a row of image panels.
+
+    Every panel gets tick marks and x tick labels; only the first panel gets y tick
+    labels.
+    """
+    for i, ax in enumerate(axes):
+        ax.set_xticks(ticks)
+        ax.set_yticks(ticks)
+        ax.tick_params(direction="in", length=2.5, color="0.5", top=True, right=True)
+        if i > 0:
+            ax.tick_params(labelleft=False)
