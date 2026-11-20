@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+from genericpath import exists
 
 os.environ["JAX_ENABLE_X64"] = "True"
 os.environ["_TYPER_STANDARD_TRACEBACK"] = "1"
@@ -115,7 +116,7 @@ def main(
         raise ValueError()
 
     out_root_path = Path(out_dir)
-    assert out_root_path.exists(), "Need to create root output directory."
+    out_root_path.mkdir(exist_ok=True, parents=False)
 
     # get hash for specified bin argument
     bin_hash = _get_bins_hash(
